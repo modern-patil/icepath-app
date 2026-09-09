@@ -5,6 +5,7 @@ import {
 } from "recharts";
 import {
   Bell, X, Ship, Waves, Route as RouteIcon, TriangleAlert, Box, Satellite, Plus, RotateCcw,
+  ZoomIn, ZoomOut,
 } from "lucide-react";
 import "./App.css";
 
@@ -150,6 +151,7 @@ export default function App() {
   const [satelliteView, setSatelliteView] = useState(false);
   const [clock, setClock] = useState(new Date());
   const [selectedBergId, setSelectedBergId] = useState(null);
+  const [selectedShipId, setSelectedShipId] = useState(null);
 
   const [routes, setRoutes] = useState(INITIAL_ROUTES);
   const [focusedRouteId, setFocusedRouteId] = useState("safest");
@@ -172,6 +174,7 @@ export default function App() {
   shipsRef.current = ships;
 
   const selectedBerg = ICEBERGS.find((b) => b.id === selectedBergId) || null;
+  const selectedShip = ships.find((s) => s.id === selectedShipId) || null;
 
   // live clock
   useEffect(() => {
@@ -341,6 +344,7 @@ export default function App() {
   const removeShip = (id) => {
     if (ships.length <= 1) return;
     setShips((s) => s.filter((sh) => sh.id !== id));
+    if (selectedShipId === id) setSelectedShipId(null);
   };
 
   const reassignShipRoute = (id, routeId) => {
@@ -370,22 +374,47 @@ export default function App() {
     setIsPanning(false);
   };
 
-  const handleWheelZoom = (e) => {
-    e.preventDefault();
-    const rect = svgRef.current.getBoundingClientRect();
-    const px = (e.clientX - rect.left) / rect.width;
-    const py = (e.clientY - rect.top) / rect.height;
+  // native (non-passive) wheel listener — this is the fix for zoom fighting
+  // with page scroll. React's synthetic onWheel plus a scrollable page body
+  // was the cause of "zoom not working well".
+  useEffect(() => {
+    const svgEl = svgRef.current;
+    if (!svgEl) return;
+    const onWheel = (e) => {
+      e.preventDefault();
+      const rect = svgEl.getBoundingClientRect();
+      const px = (e.clientX - rect.left) / rect.width;
+      const py = (e.clientY - rect.top) / rect.height;
+      setView((v) => {
+        const factor = e.deltaY > 0 ? 1.1 : 0.9;
+        const newW = clamp(v.w * factor, 18, 100);
+        const newH = clamp(v.h * factor, 18, 100);
+        const focusX = v.x + px * v.w;
+        const focusY = v.y + py * v.h;
+        return {
+          w: newW,
+          h: newH,
+          x: clamp(focusX - px * newW, -40, 140 - newW),
+          y: clamp(focusY - py * newH, -40, 140 - newH),
+        };
+      });
+    };
+    svgEl.addEventListener("wheel", onWheel, { passive: false });
+    return () => svgEl.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // button-driven zoom, zooms toward the current center
+  const zoomBy = (factor) => {
     setView((v) => {
-      const factor = e.deltaY > 0 ? 1.12 : 0.89;
-      const newW = clamp(v.w * factor, 35, 100);
-      const newH = clamp(v.h * factor, 35, 100);
-      const focusX = v.x + px * v.w;
-      const focusY = v.y + py * v.h;
+      const newW = clamp(v.w * factor, 18, 100);
+      const newH = clamp(v.h * factor, 18, 100);
+      const cx = v.x + v.w / 2;
+      const cy = v.y + v.h / 2;
       return {
         w: newW,
         h: newH,
-        x: clamp(focusX - px * newW, -40, 140 - newW),
-        y: clamp(focusY - py * newH, -40, 140 - newH),
+        x: clamp(cx - newW / 2, -40, 140 - newW),
+        y: clamp(cy - newH / 2, -40, 140 - newH),
       };
     });
   };
@@ -421,7 +450,6 @@ export default function App() {
             onMouseMove={handlePanMove}
             onMouseUp={handlePanEnd}
             onMouseLeave={handlePanEnd}
-            onWheel={handleWheelZoom}
           >
             <defs>
               <radialGradient id="ocean" cx="46%" cy="40%" r="80%">
@@ -537,7 +565,7 @@ export default function App() {
                   transform={`translate(${b.x},${b.y})`}
                   filter="url(#pinShadow)"
                   className="berg-pin"
-                  onClick={() => setSelectedBergId(b.id)}
+                  onClick={() => { setSelectedBergId(b.id); setSelectedShipId(null); }}
                 >
                   <title>{b.id} — {b.risk} risk, {b.note}</title>
                   {b.risk === "high" && <circle r={b.size * 0.55} className="pulse" fill="none" stroke="var(--danger)" strokeWidth="0.4" />}
@@ -567,8 +595,15 @@ export default function App() {
               const route = routes[s.routeId];
               if (!route) return null;
               const pos = pointOnPath(route.points, shipT[s.id] || 0);
+              const isSelected = s.id === selectedShipId;
               return (
-                <g key={s.id} transform={`translate(${pos.x},${pos.y})`}>
+                <g
+                  key={s.id}
+                  transform={`translate(${pos.x},${pos.y})`}
+                  className="ship-pin"
+                  onClick={() => { setSelectedShipId(s.id); setSelectedBergId(null); }}
+                >
+                  {isSelected && <circle r="4.2" fill="none" stroke="var(--cyan)" strokeWidth="0.4" strokeDasharray="0.6,0.6" />}
                   <g transform={`rotate(${pos.angle})`} filter="url(#pinShadow)">
                     <circle r="2.1" fill="#ffffff" opacity="0.9" />
                     <path
@@ -644,6 +679,11 @@ export default function App() {
             )}
           </div>
 
+          <div className="zoom-controls">
+            <button className="zoom-btn" onClick={() => zoomBy(0.8)} title="Zoom in"><ZoomIn size={15} /></button>
+            <button className="zoom-btn" onClick={() => zoomBy(1.25)} title="Zoom out"><ZoomOut size={15} /></button>
+          </div>
+
           {show3D && (
             <div className="vessel-3d">
               <canvas ref={canvasRef} className="vessel-canvas" />
@@ -676,7 +716,11 @@ export default function App() {
             </div>
             <ul className="fleet-list">
               {ships.map((s) => (
-                <li key={s.id}>
+                <li
+                  key={s.id}
+                  className={s.id === selectedShipId ? "fleet-item-selected" : ""}
+                  onClick={() => setSelectedShipId(s.id)}
+                >
                   <span className="fleet-dot" style={{ background: s.color }} />
                   <div className="fleet-info">
                     <span className="fleet-name">{s.name}</span>
@@ -685,6 +729,7 @@ export default function App() {
                   <select
                     className="fleet-route-select"
                     value={s.routeId}
+                    onClick={(e) => e.stopPropagation()}
                     onChange={(e) => reassignShipRoute(s.id, e.target.value)}
                   >
                     {Object.entries(routes).map(([key, r]) => (
@@ -692,12 +737,52 @@ export default function App() {
                     ))}
                   </select>
                   {ships.length > 1 && (
-                    <button className="fleet-remove" onClick={() => removeShip(s.id)}><X size={12} /></button>
+                    <button
+                      className="fleet-remove"
+                      onClick={(e) => { e.stopPropagation(); removeShip(s.id); }}
+                    ><X size={12} /></button>
                   )}
                 </li>
               ))}
             </ul>
           </div>
+
+          {selectedShip && (
+            <div className="card ship-detail-card">
+              <div className="card-title">
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <Ship size={14} /> {selectedShip.name}
+                </span>
+                <button className="berg-detail-close" onClick={() => setSelectedShipId(null)}><X size={13} /></button>
+              </div>
+              <dl className="berg-detail-list">
+                <dt>Code</dt>
+                <dd>{selectedShip.code}</dd>
+                <dt>Route</dt>
+                <dd>{routes[selectedShip.routeId]?.label || "—"}</dd>
+                <dt>Distance</dt>
+                <dd>{routes[selectedShip.routeId]?.distance || "—"}</dd>
+                <dt>ETA</dt>
+                <dd>{routes[selectedShip.routeId]?.eta || "—"}</dd>
+                <dt>Fuel</dt>
+                <dd>{routes[selectedShip.routeId]?.fuel ?? "—"} t</dd>
+                <dt>Risk score</dt>
+                <dd>{routes[selectedShip.routeId]?.risk ?? "—"}/100</dd>
+              </dl>
+              <div className="ship-detail-route-row">
+                <span className="ship-detail-route-label">Reassign route</span>
+                <select
+                  className="fleet-route-select"
+                  value={selectedShip.routeId}
+                  onChange={(e) => reassignShipRoute(selectedShip.id, e.target.value)}
+                >
+                  {Object.entries(routes).map(([key, r]) => (
+                    <option key={key} value={key}>{r.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
 
           <div className="card">
             <div className="card-title">
@@ -790,7 +875,7 @@ export default function App() {
                 <li
                   key={b.id}
                   className={b.id === selectedBergId ? "berg-item-selected" : ""}
-                  onClick={() => setSelectedBergId(b.id)}
+                  onClick={() => { setSelectedBergId(b.id); setSelectedShipId(null); }}
                 >
                   <span className="berg-dot" style={{ background: riskColor(b.risk) }} />
                   <span className="berg-id">{b.id}</span>

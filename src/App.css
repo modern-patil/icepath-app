@@ -5,6 +5,7 @@ body,
 #root {
   height: 100%;
   margin: 0;
+  overflow: hidden;
 }
 
 :root {
@@ -38,7 +39,9 @@ body,
     radial-gradient(ellipse at 100% 110%, rgba(167, 139, 250, 0.07), transparent 50%),
     var(--void);
   color: var(--ink);
-  min-height: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   font-family: var(--body);
   display: flex;
   flex-direction: column;
@@ -55,6 +58,7 @@ body,
   background: rgba(5, 11, 19, 0.7);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .brand {
@@ -139,11 +143,29 @@ body,
   padding: 16px 20px 20px;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 @media (max-width:860px) {
+  .app {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  html,
+  body,
+  #root {
+    overflow: visible;
+  }
+
   .layout {
     grid-template-columns: 1fr;
+    overflow: visible;
+  }
+
+  .map-panel {
+    height: 480px;
   }
 }
 
@@ -154,7 +176,8 @@ body,
   border-radius: 14px;
   overflow: hidden;
   background: var(--void);
-  min-height: 620px;
+  height: 100%;
+  min-height: 0;
   border: 1px solid var(--border);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 20px 50px rgba(0, 0, 0, 0.45);
 }
@@ -316,6 +339,38 @@ body,
   color: #1c1533;
 }
 
+/* zoom buttons — top-right corner of the map */
+
+.zoom-controls {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 2;
+}
+
+.zoom-btn {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 11, 19, 0.75);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 8px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.zoom-btn:hover {
+  border-color: var(--cyan);
+  color: var(--ink);
+}
+
 .vessel-3d {
   position: absolute;
   bottom: 18px;
@@ -352,6 +407,7 @@ body,
   gap: 12px;
   overflow-y: auto;
   min-height: 0;
+  height: 100%;
 }
 
 .card {
@@ -361,6 +417,7 @@ body,
   border-radius: 12px;
   padding: 15px;
   position: relative;
+  flex-shrink: 0;
 }
 
 .card::before {
@@ -505,6 +562,19 @@ body,
   display: flex;
   align-items: center;
   gap: 9px;
+  cursor: pointer;
+  padding: 5px 6px;
+  margin: 0 -6px;
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+
+.fleet-list li:hover {
+  background: var(--panel-2);
+}
+
+.fleet-item-selected {
+  background: rgba(94, 234, 212, 0.09);
 }
 
 .fleet-dot {
@@ -567,6 +637,32 @@ body,
 
 .fleet-remove:hover {
   color: var(--danger);
+}
+
+/* ship detail card */
+
+.ship-detail-card::before {
+  background: var(--violet);
+  box-shadow: 0 0 6px rgba(167, 139, 250, 0.7);
+}
+
+.ship-detail-route-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.ship-detail-route-label {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.ship-detail-route-row .fleet-route-select {
+  max-width: 130px;
 }
 
 /* route comparison */
@@ -766,6 +862,10 @@ body,
   cursor: pointer;
 }
 
+.ship-pin {
+  cursor: pointer;
+}
+
 .berg-dot {
   width: 7px;
   height: 7px;
@@ -784,7 +884,7 @@ body,
   color: var(--muted);
 }
 
-/* iceberg detail panel */
+/* iceberg detail panel (also reused by ship detail panel) */
 
 .berg-detail-card::before {
   background: var(--cyan);
@@ -838,28 +938,6 @@ body,
   font-size: 2.1px;
   font-weight: 600;
   fill: var(--ink);
-}
-
-.reset-view-btn {
-  position: absolute;
-  bottom: 18px;
-  right: 18px;
-  z-index: 2;
-  background: rgba(5, 11, 19, 0.75);
-  border: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 11.5px;
-  font-weight: 500;
-  padding: 7px 12px;
-  border-radius: 999px;
-  cursor: pointer;
-  backdrop-filter: blur(8px);
-  transition: border-color 0.15s ease, color 0.15s ease;
-}
-
-.reset-view-btn:hover {
-  border-color: var(--cyan);
-  color: var(--ink);
 }
 
 .ice-dot {
