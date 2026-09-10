@@ -2,7 +2,7 @@
 
 Antarctic sea-ice / iceberg trajectory / navigation decision-support demo UI.
 All data in `src/App.jsx` (`FORECAST`, `ICEBERGS`, `ROUTES`, `ALERTS_SEED`) is
-mocked — wire it up to your real GEE / FIRMS / ocean-model outputs later.
+mocked — wire it up to your real GEE / FIRMS / ocean-model outputs later. 
 
 ## Run it
 
