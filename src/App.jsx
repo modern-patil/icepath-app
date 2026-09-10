@@ -72,14 +72,19 @@ function generateTrafficShips(count) {
 // ---------------------------------------------------------------------------
 const FORECAST = [
   { day: "D1", ice: 62 }, { day: "D2", ice: 65 }, { day: "D3", ice: 70 },
-  { day: "D4", ice: 74 }, { day: "D5", ice: 71 }, { day: "D6", ice: 68 }, { day: "D7", ice: 66 },
-];
+  { day: "D4", ice: 74 }, { day: "D5", ice: 71 }, { day: "D6", ice: 68 },
+  { day: "D7", ice: 66 }, { day: "D8", ice: 69 }, { day: "D9", ice: 73 },
+  { day: "D10", ice: 77 }, { day: "D11", ice: 80 }, { day: "D12", ice: 78 },
+  { day: "D13", ice: 75 }, { day: "D14", ice: 72 }, { day: "D15", ice: 70 },
+  { day: "D16", ice: 74 }, { day: "D17", ice: 79 }, { day: "D18", ice: 83 },
+  { day: "D19", ice: 81 }, { day: "D20", ice: 77 }, { day: "D21", ice: 73 },
+];;
 
 const ICEBERGS = [
-  { id: "B-42", risk: "high", x: 62, y: 34, size: 9, note: "1.4 km from route" },
-  { id: "A-76", risk: "medium", x: 40, y: 58, size: 7, note: "6.1 km from route" },
-  { id: "C-19", risk: "low", x: 74, y: 62, size: 5, note: "14 km from route" },
-  { id: "D-33", risk: "medium", x: 30, y: 30, size: 6, note: "8.7 km from route" },
+  { id: "B-42", risk: "high", x: 62, y: 34, size: 9, note: "25 nm from route" },
+  { id: "A-76", risk: "medium", x: 40, y: 58, size: 7, note: "33 nm from route" },
+  { id: "C-19", risk: "low", x: 74, y: 62, size: 5, note: "76 nm from route" },
+  { id: "D-33", risk: "medium", x: 30, y: 30, size: 6, note: "59 nm from route" },
 ];
 
 const INITIAL_ROUTES = {
@@ -136,6 +141,8 @@ const ALERTS_SEED = [
   { id: 1, level: "danger", text: "Iceberg B-42 crosses fastest route in ~6h" },
   { id: 2, level: "warning", text: "Dense ice ahead near 68°S — reroute advised" },
   { id: 3, level: "info", text: "Storm system 340 nm north-west, tracking away" },
+  { id: 4, level: "danger", text: "Growler cluster detected 12 nm off safest route" },
+  
 ];
 
 function clamp(v, min, max) {
@@ -235,7 +242,7 @@ export default function App() {
   }, [routes]);
 
   // three.js vessel view
-  useEffect(() => {
+ useEffect(() => {
     if (!show3D || !canvasRef.current) return;
     const canvas = canvasRef.current;
     const width = canvas.clientWidth, height = canvas.clientHeight;
@@ -263,25 +270,91 @@ export default function App() {
     ocean.position.y = -0.6;
     scene.add(ocean);
 
-    const ship = new THREE.Group();
-    const hullMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.05 });
+    // ---------- materials ----------
+    const hullMat = new THREE.MeshStandardMaterial({ color: 0xd9541e, roughness: 0.45, metalness: 0.1 });
+    const bootMat = new THREE.MeshStandardMaterial({ color: 0x1a2530, roughness: 0.6 });
+    const superMat = new THREE.MeshStandardMaterial({ color: 0xf2f5f7, roughness: 0.4 });
     const trimMat = new THREE.MeshStandardMaterial({ color: 0x5f6368, roughness: 0.6 });
-    const iceMat = new THREE.MeshStandardMaterial({ color: 0x5eead4, roughness: 0.4, emissive: 0x1a4d44, emissiveIntensity: 0.3 });
+    const glassMat = new THREE.MeshStandardMaterial({ color: 0x5eead4, emissive: 0x1a4d44, emissiveIntensity: 0.6, roughness: 0.3 });
+    const funnelMat = new THREE.MeshStandardMaterial({ color: 0x2b3542, roughness: 0.5 });
+    const stripeMat = new THREE.MeshStandardMaterial({ color: 0x5eead4, emissive: 0x0e3a34, emissiveIntensity: 0.4 });
 
-    const hull = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.5, 0.9), hullMat);
-    hull.position.y = 0;
-    const bow = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.9, 4), trimMat);
-    bow.rotation.z = Math.PI / 2;
-    bow.rotation.y = Math.PI / 4;
-    bow.scale.set(1, 1, 2);
-    bow.position.set(1.5, 0, 0);
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.6), trimMat);
-    cabin.position.set(-0.6, 0.5, 0);
-    const funnel = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.5, 12), iceMat);
-    funnel.position.set(-1.0, 0.8, 0);
+    const ship = new THREE.Group();
+    const geoms = []; // track for disposal
 
-    ship.add(hull, bow, cabin, funnel);
+    // ---------- hull (tapered bow via extruded shape) ----------
+    const hullShape = new THREE.Shape();
+    hullShape.moveTo(-1.3, -0.45);
+    hullShape.lineTo(-1.3, 0.45);
+    hullShape.lineTo(0.6, 0.45);
+    hullShape.quadraticCurveTo(1.25, 0.42, 1.55, 0.03);
+    hullShape.quadraticCurveTo(1.25, -0.42, 0.6, -0.45);
+    hullShape.lineTo(-1.3, -0.45);
+    const hullGeo = new THREE.ExtrudeGeometry(hullShape, { depth: 0.5, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.04, bevelSegments: 2 });
+    hullGeo.rotateX(-Math.PI / 2);
+    hullGeo.center();
+    geoms.push(hullGeo);
+    const hull = new THREE.Mesh(hullGeo, hullMat);
+    hull.position.y = 0.15;
+
+    // dark boot stripe along waterline
+    const bootGeo = new THREE.BoxGeometry(2.75, 0.08, 0.86);
+    geoms.push(bootGeo);
+    const boot = new THREE.Mesh(bootGeo, bootMat);
+    boot.position.y = -0.1;
+
+    // ---------- bridge / superstructure (tiered, toward stern) ----------
+    const tier1Geo = new THREE.BoxGeometry(0.9, 0.32, 0.75);
+    const tier2Geo = new THREE.BoxGeometry(0.62, 0.3, 0.6);
+    const tier3Geo = new THREE.BoxGeometry(0.4, 0.24, 0.42);
+    geoms.push(tier1Geo, tier2Geo, tier3Geo);
+    const tier1 = new THREE.Mesh(tier1Geo, superMat);
+    tier1.position.set(-0.55, 0.42, 0);
+    const tier2 = new THREE.Mesh(tier2Geo, superMat);
+    tier2.position.set(-0.55, 0.72, 0);
+    const tier3 = new THREE.Mesh(tier3Geo, trimMat);
+    tier3.position.set(-0.55, 0.98, 0);
+
+    // bridge windows strip (glowing)
+    const windowGeo = new THREE.BoxGeometry(0.64, 0.07, 0.78);
+    geoms.push(windowGeo);
+    const windowStrip = new THREE.Mesh(windowGeo, glassMat);
+    windowStrip.position.set(-0.55, 0.58, 0);
+
+    // ---------- funnel with stripe ----------
+    const funnelGeo = new THREE.CylinderGeometry(0.11, 0.14, 0.42, 12);
+    const stripeGeo = new THREE.CylinderGeometry(0.115, 0.115, 0.1, 12);
+    geoms.push(funnelGeo, stripeGeo);
+    const funnel = new THREE.Mesh(funnelGeo, funnelMat);
+    funnel.position.set(-0.95, 0.85, 0);
+    const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+    stripe.position.set(-0.95, 1.02, 0);
+
+    // ---------- mast + radar ----------
+    const mastGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.5, 6);
+    const radarGeo = new THREE.SphereGeometry(0.07, 10, 10);
+    geoms.push(mastGeo, radarGeo);
+    const mast = new THREE.Mesh(mastGeo, trimMat);
+    mast.position.set(-0.55, 1.35, 0);
+    const radar = new THREE.Mesh(radarGeo, trimMat);
+    radar.position.set(-0.55, 1.62, 0);
+
+    // ---------- bow crane (research vessels carry these) ----------
+    const craneGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.5, 6);
+    geoms.push(craneGeo);
+    const crane = new THREE.Mesh(craneGeo, trimMat);
+    crane.rotation.z = Math.PI / 3.2;
+    crane.position.set(0.85, 0.4, 0.25);
+
+    // ---------- helideck at stern ----------
+    const deckGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.03, 24);
+    geoms.push(deckGeo);
+    const deck = new THREE.Mesh(deckGeo, trimMat);
+    deck.position.set(-1.1, 0.2, 0);
+
+    ship.add(hull, boot, tier1, tier2, tier3, windowStrip, funnel, stripe, mast, radar, crane, deck);
     ship.position.y = 0.2;
+    ship.scale.set(0.95, 0.95, 0.95);
     scene.add(ship);
 
     let raf;
@@ -293,7 +366,7 @@ export default function App() {
       ship.rotation.x = Math.sin(time * 0.9) * 0.02;
       camera.position.x = Math.sin(time * 0.25) * 5.5;
       camera.position.z = Math.cos(time * 0.25) * 5.5;
-      camera.lookAt(0, 0.2, 0);
+      camera.lookAt(0, 0.3, 0);
       renderer.render(scene, camera);
       raf = requestAnimationFrame(animate);
     };
@@ -302,8 +375,8 @@ export default function App() {
     return () => {
       cancelAnimationFrame(raf);
       renderer.dispose();
-      hull.geometry.dispose(); bow.geometry.dispose(); cabin.geometry.dispose(); funnel.geometry.dispose();
-      hullMat.dispose(); trimMat.dispose(); iceMat.dispose();
+      geoms.forEach((g) => g.dispose());
+      [hullMat, bootMat, superMat, trimMat, glassMat, funnelMat, stripeMat].forEach((m) => m.dispose());
       ocean.geometry.dispose(); ocean.material.dispose();
     };
   }, [show3D]);
@@ -570,12 +643,20 @@ export default function App() {
                   <title>{b.id} — {b.risk} risk, {b.note}</title>
                   {b.risk === "high" && <circle r={b.size * 0.55} className="pulse" fill="none" stroke="var(--danger)" strokeWidth="0.4" />}
                   {isSelected && <circle r={s * 5.4} fill="none" stroke="var(--cyan)" strokeWidth="0.4" strokeDasharray="0.6,0.6" />}
-                  <path
-                    d={`M0,${-s * 4.4} C${s * 2.4},${-s * 4.4} ${s * 2.6},${-s * 1.2} 0,${s * 0.4}
-                        C${-s * 2.6},${-s * 1.2} ${-s * 2.4},${-s * 4.4} 0,${-s * 4.4} Z`}
-                    fill={isSelected ? "var(--cyan)" : riskColor(b.risk)} stroke="#ffffff" strokeWidth="0.3"
-                  />
-                  <circle cy={-s * 2.9} r={s * 1.05} fill="#ffffff" />
+                 <path
+  d={`M${-s * 2.6},${s * 0.5}
+      L${-s * 1.7},${-s * 2.6}
+      L${-s * 0.7},${-s * 1.5}
+      L0,${-s * 4.3}
+      L${s * 0.8},${-s * 1.7}
+      L${s * 1.8},${-s * 3.1}
+      L${s * 2.6},${s * 0.5}
+      Z`}
+  fill={isSelected ? "var(--cyan)" : riskColor(b.risk)}
+  stroke="#ffffff"
+  strokeWidth="0.3"
+  strokeLinejoin="round"
+/>
                 </g>
               );
             })}
@@ -593,7 +674,7 @@ export default function App() {
             {/* ships */}
             {ships.map((s) => {
               const route = routes[s.routeId];
-              if (!route) return null;
+            if (!route || !route.points || route.points.length < 2) return null;
               const pos = pointOnPath(route.points, shipT[s.id] || 0);
               const isSelected = s.id === selectedShipId;
               return (
@@ -852,7 +933,7 @@ export default function App() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid stroke="rgba(125,211,252,0.1)" strokeDasharray="2 3" vertical={false} />
-                  <XAxis dataKey="day" tick={{ fill: "#7c93a8", fontSize: 10 }} axisLine={{ stroke: "rgba(125,211,252,0.15)" }} tickLine={false} />
+                  <XAxis dataKey="day" tick={{ fill: "#7c93a8", fontSize: 10 }} axisLine={{ stroke: "rgba(125,211,252,0.15)" }} tickLine={false} interval={2} />
                   <YAxis tick={{ fill: "#7c93a8", fontSize: 10 }} axisLine={false} tickLine={false} width={26} />
                   <Tooltip contentStyle={{ background: "#0e1c2b", border: "1px solid rgba(125,211,252,0.25)", fontSize: 12, color: "#e9f4fb", borderRadius: 8 }} />
                   <ReferenceLine x={FORECAST[day - 1].day} stroke="#fb7185" strokeDasharray="2 2" />
@@ -861,11 +942,11 @@ export default function App() {
               </ResponsiveContainer>
             </div>
             <input
-              type="range" min="1" max="7" value={day}
+              type="range" min="1" max="21" value={day}
               onChange={(e) => setDay(Number(e.target.value))}
               className="slider"
             />
-            <div className="slider-caption">Day {day} of 7 — {FORECAST[day - 1].ice}% concentration</div>
+            <div className="slider-caption">Day {day} of 21 — {FORECAST[day - 1].ice}% concentration</div>
           </div>
 
           <div className="card">
@@ -917,12 +998,23 @@ function riskColor(risk) {
 
 // interpolate a point + heading angle along a polyline, t in [0,1]
 function pointOnPath(points, t) {
+  if (!points || points.length === 0) return { x: 0, y: 0, angle: 0 };
+  if (points.length === 1) {
+    const [x, y] = points[0];
+    return { x, y, angle: 0 };
+  }
+
   const segs = points.length - 1;
-  const scaled = t * segs;
-  const i = Math.min(Math.floor(scaled), segs - 1);
+  const scaled = clamp(t, 0, 1) * segs;
+  const i = Math.min(Math.max(Math.floor(scaled), 0), segs - 1);
   const localT = scaled - i;
-  const [x1, y1] = points[i];
-  const [x2, y2] = points[i + 1];
+
+  const p1 = points[i];
+  const p2 = points[i + 1];
+  if (!p1 || !p2) return { x: 0, y: 0, angle: 0 };
+
+  const [x1, y1] = p1;
+  const [x2, y2] = p2;
   const x = x1 + (x2 - x1) * localT;
   const y = y1 + (y2 - y1) * localT;
   const angle = (Math.atan2(x2 - x1, -(y2 - y1)) * 180) / Math.PI;
